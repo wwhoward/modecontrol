@@ -1,0 +1,26 @@
+% Look at difference between Wasserstein distance and Lp norm
+clc;clear;close all
+
+% Make up distributions
+u = normpdf(-10:10); 
+v = normpdf(-10:10, -5); 
+
+% Space we're defined over
+x = -10:10; 
+
+figure; 
+hold on
+plot(x, u); 
+plot(x, v); 
+
+
+function d = lp(u, v, p)
+    d = vecnorm(abs(u-v)); 
+end
+
+function d = wass(u, v, p)
+    if nargin < 3
+        p = 1; 
+    end
+    d = 1/length(u) * sum(abs(u - v))
+end

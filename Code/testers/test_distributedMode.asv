@@ -1,0 +1,39 @@
+% Run TimelyTrackingNetwork with distributed mode control
+
+% Header: 
+clc;clear;close all
+addpath(genpath(pwd))
+% 
+dt = 0.1; 
+T = 5; 
+nRep = 1; 
+nEpochs = 1; 
+
+parfor n = 1:nRep
+    display("Rep" + string(n))
+    
+    % Instance objects (Need to do this here but will be written-over immediately 
+    tmpTargets = targetModel(1); 
+    tmpTrackers = genTrackers(1);  
+
+    FC = fusionCenter(tmpTargets, tmpTrackers, 'ModeSelection', 'Centralized'); 
+    
+    for e = 1:nEpochs
+        Targets = targetModel(10); 
+        [Trackers, nTrackers, NodeLocations] = genTrackers(10);  
+
+        FC.newScene(Targets, Trackers); 
+
+        for t = 0:dt:T
+            Targets.update(dt); 
+            for i = 1:length(Trackers)
+                Trackers{i}.observe(Targets, t); 
+            end
+            FC.getUpdates(t); 
+            FC.selectModes; 
+        end
+        FC.updateTargetClasses(); 
+
+        Stats{e, n} = FC.Stats; 
+    end
+end

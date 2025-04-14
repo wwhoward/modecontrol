@@ -1,0 +1,80 @@
+% Run for a decent length sim, where one network has perfect class
+% information and the other does not
+
+% Header
+clc;clear;close all
+
+%
+dt = 0.1; 
+T = 5; 
+nRep = 12; 
+nEpochs = 1; 
+Stats = {}; 
+parfor n = 1:nRep
+    display("Rep" + string(n))
+
+    % Instance objects
+    tmpTargets = targetModel(1); 
+    tmpTrackers = genTrackers(1); 
+
+    tunedFC = fusionCenter(tmpTargets, tmpTrackers, 'ModeControl', 'Random', 'RandomRadarPercent', 0.8); 
+    randomFC = fusionCenter(tmpTargets, tmpTrackers, 'ModeControl', 'Random', 'RandomRadarPercent', 0.8); 
+    untunedFC = fusionCenter(tmpTargets, tmpTrackers, 'ModeControl', 'Active'); 
+
+    Targets = targetModel(10); 
+    [tunedTrackers, nTrackers, NodeLocations] = genTrackers(10); 
+    for i = 1:nTrackers
+        tunedTrackers{i}.UseTrueClasses = true; 
+    end
+    randomTrackers = genTrackers(10, 'FixedNumber', nTrackers, 'NodeLocations', NodeLocations); 
+    untunedTrackers = genTrackers(10, 'FixedNumber', nTrackers, 'NodeLocations', NodeLocations); 
+
+    tunedFC.newScene(Targets, tunedTrackers); 
+    randomFC.newScene(Targets, randomTrackers); 
+    untunedFC.newScene(Targets, untunedTrackers); 
+
+    for t = 1:dt:T
+        Targets.update(dt); 
+        for i = 1:nTrackers
+            tunedTrackers{i}.observe(Targets, t); 
+            randomTrackers{i}.observe(Targets, t); 
+            untunedTrackers{i}.observe(Targets, t); 
+        end
+        tunedFC.getUpdates(t); 
+        randomFC.getUpdates(t); 
+        untunedFC.getUpdates(t); 
+
+        tunedFC.selectModes; 
+        randomFC.selectModes; 
+        untunedFC.selectModes; 
+    end
+
+    tmp_stats = {}; 
+    tmp_stats{1, 1} = tunedFC.Stats; 
+    tmp_stats{2, 1} = randomFC.Stats; 
+    tmp_stats{3, 1} = untunedFC.Stats; 
+
+    for i = 1:3
+        Stats{i, n} = tmp_stats{i};  
+    end
+end
+
+meanStats = AverageStats(Stats); 
+colors = linspecer(3); 
+display_names = {"Tuned", "Random", "Untuned"}; 
+
+figure; 
+semilogx(meanStats{"ECDF"}{1,2}, meanStats{"ECDF"}{1,1}, 'linewidth', 2, 'Color', colors(1,:), 'DisplayName', display_names{1}); 
+hold on
+semilogx(meanStats{"ECDF"}{2,2}, meanStats{"ECDF"}{2,1}, 'linewidth', 2, 'Color', colors(2,:), 'DisplayName', display_names{2}); 
+semilogx(meanStats{"ECDF"}{3,2}, meanStats{"ECDF"}{3,1}, 'linewidth', 2, 'Color', colors(3,:), 'DisplayName', display_names{3}); 
+legend('Interpreter', 'latex', 'fontsize', 12, 'location', 'best')
+xlabel('Meters', 'interpreter', 'latex', 'fontsize', 12)
+ylabel('Pr(Error $\leq X$)', 'interpreter', 'latex', 'fontsize', 12)
+grid on
+
+
+
+
+
+

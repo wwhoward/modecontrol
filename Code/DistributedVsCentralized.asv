@@ -1,0 +1,163 @@
+% Compare the centralized, distributed, 80/20 random, and 100% radar techniques 
+
+% Header: 
+clc;clear;close all
+addpath(genpath(pwd))
+% 
+dt = 0.05; 
+T = 5; 
+nRep = 12; 
+nEpochs = 10; 
+
+parfor n = 1:nRep
+    display("Rep" + string(n))
+    
+    % Instance objects (Need to do this here but will be written-over immediately 
+    tmpTargets = targetModel(1); 
+    tmpTrackers = genTrackers(1);  
+    
+    distFC = fusionCenter(tmpTargets, tmpTrackers, 'ModeControl', 'Distributed'); 
+    centFC = fusionCenter(tmpTargets, tmpTrackers, 'ModeControl', 'Bandit'); 
+    radrFC = fusionCenter(tmpTargets, tmpTrackers, 'ModeControl', 'Active');     
+    randFC = fusionCenter(tmpTargets, tmpTrackers, 'ModeControl', 'Random', 'RandomRadarPercent', 0.8); 
+    
+    for e = 1:nEpochs
+        Targets = targetModel(10); 
+
+        [distTrackers, nTrackers, NodeLocations] = genTrackers(10);  
+
+        centTrackers = genTrackers(10, 'FixedNumber', nTrackers, 'NodeLocations', NodeLocations); 
+        radrTrackers = genTrackers(10, 'FixedNumber', nTrackers, 'NodeLocations', NodeLocations); 
+        randTrackers = genTrackers(10, 'FixedNumber', nTrackers, 'NodeLocations', NodeLocations); 
+
+        distFC.newScene(Targets, distTrackers); 
+        centFC.newScene(Targets, centTrackers); 
+        radrFC.newScene(Targets, radrTrackers); 
+        randFC.newScene(Targets, randTrackers); 
+
+        for t = 0:dt:T
+            Targets.update(dt); 
+            for i = 1:nTrackers            
+                distTrackers{i}.observe(Targets, t); 
+                centTrackers{i}.observe(Targets, t); 
+                radrTrackers{i}.observe(Targets, t); 
+                randTrackers{i}.observe(Targets, t); 
+            end
+
+            distFC.getUpdates(t); 
+            centFC.getUpdates(t); 
+            radrFC.getUpdates(t); 
+            randFC.getUpdates(t); 
+
+            distFC.selectModes; 
+            centFC.selectModes; 
+            radrFC.selectModes; 
+            randFC.selectModes; 
+        end
+        
+        distFC.updateTargetClasses(); 
+        centFC.updateTargetClasses(); 
+
+        distStats{e, n} = distFC.Stats; 
+        centStats{e, n} = centFC.Stats; 
+        radrStats{e, n} = radrFC.Stats; 
+        randStats{e, n} = randFC.Stats; 
+    end
+end
+
+% Figure prep
+distMean = AverageStats(distStats); 
+centMean = AverageStats(centStats); 
+radrMean = AverageStats(radrStats); 
+randMean = AverageStats(randStats); 
+
+colors = linspecer(4); 
+display_names = {"Distributed", "Centralized", "Radar Only", "Random 80\%"}; 
+
+% Radar Percent
+figure; 
+hold on
+plot(distMean{"TimeSteps"}, movmean(distMean{"ModeActivePercent"}(end,:), 10), 'Color', colors(1,:), 'linewidth', 2, 'DisplayName', display_names{1}); 
+plot(centMean{"TimeSteps"}, movmean(centMean{"ModeActivePercent"}(end,:), 10), 'Color', colors(2,:), 'linewidth', 2, 'DisplayName', display_names{2}); 
+plot(radrMean{"TimeSteps"}, movmean(radrMean{"ModeActivePercent"}(end,:), 10), 'Color', colors(3,:), 'linewidth', 2, 'DisplayName', display_names{3}); 
+plot(randMean{"TimeSteps"}, movmean(randMean{"ModeActivePercent"}(end,:), 10), 'Color', colors(4,:), 'linewidth', 2, 'DisplayName', display_names{4}); 
+xlabel('Time (s)', 'interpreter', 'latex', 'fontsize', 12)
+ylabel('\% Radar Utilization', 'interpreter', 'latex', 'fontsize', 12)
+grid on
+legend('Location', 'Best', 'Interpreter', 'Latex', 'Fontsize', 12)
+
+% Error (linear, time dependent)
+figure
+hold on
+plot(distMean{"TimeSteps"}, distMean{"Error"}(end,:), 'Color', colors(1,:), 'linewidth', 2, 'DisplayName', display_names{1}); 
+plot(centMean{"TimeSteps"}, centMean{"Error"}(end,:), 'Color', colors(2,:), 'linewidth', 2, 'DisplayName', display_names{2}); 
+plot(radrMean{"TimeSteps"}, radrMean{"Error"}(end,:), 'Color', colors(3,:), 'linewidth', 2, 'DisplayName', display_names{3}); 
+plot(randMean{"TimeSteps"}, randMean{"Error"}(end,:), 'Color', colors(4,:), 'linewidth', 2, 'DisplayName', display_names{4}); 
+xlabel('Time (s)', 'interpreter', 'latex', 'fontsize', 12)
+ylabel('Error (m)', 'interpreter', 'latex', 'fontsize', 12)
+grid on
+legend('Location', 'Best', 'Interpreter', 'Latex', 'Fontsize', 12)
+
+% Error distribution (whole sim, last epoch)
+figure
+%semilogx(distMean{"ECDF"}{end,2}, distMean{"ECDF"}{end,1}, 'Color', colors(1,:), 'linewidth', 2, 'DisplayName', display_names{1})
+% hold on
+semilogx(centMean{"ECDF"}{end,2}, centMean{"ECDF"}{end,1}, 'Color', colors(2,:), 'linewidth', 2, 'DisplayName', display_names{2})
+hold on
+semilogx(radrMean{"ECDF"}{end,2}, radrMean{"ECDF"}{end,1}, 'Color', colors(3,:), 'linewidth', 2, 'DisplayName', display_names{3})
+semilogx(randMean{"ECDF"}{end,2}, randMean{"ECDF"}{end,1}, 'Color', colors(4,:), 'linewidth', 2, 'DisplayName', display_names{4})
+xlabel('Meters', 'interpreter', 'latex', 'fontsize', 12)
+ylabel('Pr(Error $\leq X$)', 'interpreter', 'latex', 'fontsize', 12)
+grid on
+xlim([1e-1, 1e1])
+legend('Location', 'Best', 'Interpreter', 'Latex', 'Fontsize', 12)
+
+% Missed targets
+figure
+hold on
+plot(distMean{"TimeSteps"}, distMean{"nActiveTargets"}(end,:), '-k', 'linewidth', 2, 'DisplayName', "Total Targets")
+plot(distMean{"TimeSteps"}, distMean{"nCoveredTargets"}(end,:), '--k', 'linewidth', 2, 'DisplayName', 'Covered Targets')
+%
+missed_targs = distMean{"nCoveredTargets"}(end,:) - distMean{"nTrackedTargets"}(end,:); 
+missed_targs(missed_targs < 0) = 0; 
+plot(distMean{"TimeSteps"}, missed_targs, '--', 'Color', colors(1,:), 'linewidth', 2, 'DisplayName', "Missed Targets, "+display_names{1})
+% 
+missed_targs = centMean{"nCoveredTargets"}(end,:) - centMean{"nTrackedTargets"}(end,:); 
+missed_targs(missed_targs < 0) = 0; 
+plot(centMean{"TimeSteps"}, missed_targs, '--', 'Color', colors(2,:), 'linewidth', 2, 'DisplayName', "Missed Targets, "+display_names{2})
+%
+% missed_targs = radrMean{"nCoveredTargets"}(end,:) - radrMean{"nTrackedTargets"}(end,:); 
+% missed_targs(missed_targs < 0) = 0; 
+% plot(radrMean{"TimeSteps"}, missed_targs, '--', 'Color', colors(3,:), 'linewidth', 2, 'DisplayName', "Missed Targets, "+display_names{3})
+% %
+% missed_targs = randMean{"nCoveredTargets"}(end,:) - randMean{"nTrackedTargets"}(end,:); 
+% missed_targs(missed_targs < 0) = 0; 
+% plot(randMean{"TimeSteps"}, missed_targs, '--', 'Color', colors(4,:), 'linewidth', 2, 'DisplayName', "Missed Targets, "+display_names{4})
+%
+ylim([-1, 35])
+legend('Interpreter', 'latex', 'fontsize', 12, 'location', 'east')
+xlabel('Time (s)', 'Interpreter', 'latex', 'fontsize', 12)
+ylabel('Number of Targets', 'Interpreter', 'latex', 'fontsize', 12)
+grid on
+
+% Max Intercept Range
+figure
+%
+[f, x] = ecdf(distMean{"maxInterceptRange"}(end,:)); 
+semilogx(x, f, 'color', colors(1,:), 'linewidth', 2, 'DisplayName', display_names{1})
+hold on
+%
+[f, x] = ecdf(centMean{"maxInterceptRange"}(end,:)); 
+semilogx(x, f, 'color', colors(2,:), 'linewidth', 2, 'DisplayName', display_names{2})
+%
+[f, x] = ecdf(radrMean{"maxInterceptRange"}(end,:)); 
+semilogx(x, f, 'color', colors(3,:), 'linewidth', 2, 'DisplayName', display_names{3})
+%
+[f, x] = ecdf(randMean{"maxInterceptRange"}(end,:)); 
+semilogx(x, f, 'color', colors(4,:), 'linewidth', 2, 'DisplayName', display_names{4})
+%
+grid on
+legend('interpreter', 'latex', 'fontsize', 12, 'location', 'best')
+xlabel('Max Intercept Range', 'interpreter', 'latex', 'fontsize', 12)
+ylabel('$P($Range$ \leq X)$', 'interpreter', 'latex', 'fontsize', 12)
+
